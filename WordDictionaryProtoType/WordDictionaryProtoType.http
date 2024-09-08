@@ -1,0 +1,6 @@
+@WordDictionaryProtoType_HostAddress = http://localhost:5001
+
+GET {{WordDictionaryProtoType_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
