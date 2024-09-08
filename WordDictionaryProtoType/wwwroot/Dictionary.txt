@@ -1,0 +1,64 @@
+Word,Meaning
+the,Definite article used to specify a noun
+be,To exist or live
+and,Used to connect words or phrases
+of,Expressing the relationship between a part and a whole
+a,Indefinite article used to refer to a non-specific noun
+in,Expressing the situation of something that is or appears to be enclosed by something else
+to,Expressing motion in the direction of a particular location
+have,To possess or own
+it,Used to refer to a thing previously mentioned
+you,Used to refer to the person or people being addressed
+that,Used to identify a specific person or thing observed or heard
+he,Used to refer to a male person or animal
+was,Past tense of "be"
+for,Used to indicate the purpose of an action
+on,Physically in contact with and supported by a surface
+are,Present tense of "be" for plural subjects
+as,Used in comparisons to refer to the extent or degree of something
+with,Accompanied by
+his,Of or belonging to him
+they,Used to refer to two or more people or things previously mentioned
+at,Used to indicate a location or position
+become,To begin to be
+this,Used to identify a specific person or thing close at hand
+by,Indicating the means of achieving something
+from,Indicating the point in space at which a journey, motion, or action starts
+but,Used to introduce a phrase or clause contrasting with what has already been mentioned
+not,Used to express negation
+she,Used to refer to a female person or animal
+or,Used to link alternatives
+an,Indefinite article used before words that begin with a vowel sound
+would,Indicating the consequence of an imagined event or situation
+all,Used to refer to the whole quantity or extent of a particular group or thing
+there,In, at, or to that place or position
+say,To utter words so as to convey information
+who,Used to introduce a clause giving further information about a person or people
+one,The lowest cardinal number; the number equivalent to the Roman numeral I
+will,Expressing the future tense
+there,Used to introduce a sentence or clause
+what,Used to ask for information about something
+so,To a great extent; very
+up,To a higher place or position
+out,Moving or appearing to move away from a particular place
+if,Used to introduce a conditional clause
+about,On the subject of; concerning
+many,Used with plural nouns to indicate a large number
+then,At that time; at the time in question
+them,Used to refer to two or more people or things previously mentioned
+she,Used to refer to a female person or animal
+some,An unspecified amount or number of
+her,Used to refer to a female person or animal previously mentioned
+would,Used to indicate a future possibility
+make,To form or construct something
+like,Having the same characteristics or qualities as; similar to
+him,Used to refer to a male person or animal previously mentioned
+into,Expressing movement or action with the result that someone or something becomes enclosed or surrounded by something else
+time,The indefinite continued progress of existence and events
+has,Third person singular present tense of "have"
+look,To direct one's gaze in a specified direction
+two,The number following one
+more,Used to indicate a greater or additional amount
+go,To move from one place to another
+see,To perceive with the eyes
+no,Used to indicate a negative response
