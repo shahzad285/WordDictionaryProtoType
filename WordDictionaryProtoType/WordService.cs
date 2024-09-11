@@ -18,53 +18,45 @@ namespace WordDictionaryProtoType
             string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
             using (StreamReader reader = new StreamReader(filePath))
             {
-                string line;
+                StringBuilder lineBuilder = new StringBuilder();
                 long currentOffset = 0;
+                bool inQuotes = false;
+                char currentChar;
 
-                while ((line = reader.ReadLine()) != null)
+                while (reader.Peek() >= 0)
                 {
-                    // Use a StringBuilder to handle the meaning extraction
-                    var meaningBuilder = new StringBuilder();
-                    bool insideQuotes = false;
-                    int i = 0;
+                    currentChar = (char)reader.Read();
+                    lineBuilder.Append(currentChar);
 
-                    // Iterate through each character in the line
-                    while (i < line.Length)
+                    // Toggle inQuotes status when encountering a double quote
+                    if (currentChar == '"')
                     {
-                        char currentChar = line[i];
-
-                        // Toggle the insideQuotes flag when encountering a double quote
-                        if (currentChar == '"')
-                        {
-                            insideQuotes = !insideQuotes;
-                        }
-                        else if (currentChar == ',' && !insideQuotes)
-                        {
-                            // If we encounter a comma outside of quotes, we've reached the end of the word
-                            break;
-                        }
-                        else
-                        {
-                            // Append the character to the meaning builder
-                            meaningBuilder.Append(currentChar);
-                        }
-
-                        i++;
+                        inQuotes = !inQuotes;
                     }
 
-                    // Split the word and meaning
-                    string word = line.Substring(0, i).Trim().ToLower(); // Get the word
-                    string meaning = meaningBuilder.ToString().Trim(); // Get the meaning
-
-                    // Store the offset if we have a valid word and meaning
-                    if (!string.IsNullOrEmpty(word) && !string.IsNullOrEmpty(meaning))
+                    // Check for end of line
+                    if (currentChar == '\n' && !inQuotes)
                     {
-                        long offset = currentOffset; // Store the current offset
-                        WordOffsets[word] = offset; // Add the word and its offset to the dictionary
-                    }
+                        string line = lineBuilder.ToString();
+                        lineBuilder.Clear(); // Clear the builder for the next line
 
-                    // Update the current offset to the next line's starting index
-                    currentOffset += line.Length + 1; // +1 for the newline character
+                        // Process the line to extract the word and meaning
+                        int commaIndex = line.IndexOf(',');
+                        if (commaIndex > 0)
+                        {
+                            string word = line.Substring(0, commaIndex).Trim().ToLower();
+                            string meaning = line.Substring(commaIndex + 1).Trim();
+
+                            // Store the offset if we have a valid word and meaning
+                            if (!string.IsNullOrEmpty(word) && !string.IsNullOrEmpty(meaning))
+                            {
+                                WordOffsets[word] = currentOffset; // Store the current offset
+                            }
+                        }
+
+                        // Update the current offset to the next line's starting index
+                        currentOffset += line.Length + 1; // +1 for the newline character
+                    }
                 }
             }
         }
@@ -73,22 +65,43 @@ namespace WordDictionaryProtoType
             string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
 
             // Check if the word exists in the dictionary
-            if (WordOffsets.TryGetValue(word, out var desiredOffset))
+            if (WordOffsets.TryGetValue(word.ToLower(), out var desiredOffset))
             {
-                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                using (var reader = new StreamReader(stream))
+                using (var reader = new StreamReader(filePath))
                 {
                     // Seek to the desired offset
-                    stream.Seek(desiredOffset, SeekOrigin.Begin);
+                    reader.BaseStream.Seek(desiredOffset, SeekOrigin.Begin);
+                    reader.DiscardBufferedData();
 
-                    // Read the line starting from the offset
-                    string line = reader.ReadLine();
-                    if (line != null)
+                    // Read the line from the current position
+                    StringBuilder lineBuilder = new StringBuilder();
+                    bool inQuotes = false;
+                    char currentChar;
+
+                    // Read characters until we find the end of the line
+                    while (reader.Peek() >= 0)
+                    {
+                        currentChar = (char)reader.Read();
+
+                        if (currentChar == '"')
+                        {
+                            inQuotes = !inQuotes; // Toggle inQuotes status
+                        }
+                        else if (currentChar == '\n' && !inQuotes)
+                        {
+                            break; // End of line
+                        }
+
+                        lineBuilder.Append(currentChar);
+                    }
+
+                    string line = lineBuilder.ToString();
+                    if (!string.IsNullOrEmpty(line))
                     {
                         // Use a more robust CSV parsing approach
                         var csvLine = new List<string>();
-                        var inQuotes = false;
                         var currentField = new StringBuilder();
+                        inQuotes = false;
 
                         foreach (char c in line)
                         {
@@ -107,6 +120,7 @@ namespace WordDictionaryProtoType
                             }
                         }
 
+                        // Add the last field
                         csvLine.Add(currentField.ToString());
 
                         // Ensure we have at least two fields (word and meaning)
