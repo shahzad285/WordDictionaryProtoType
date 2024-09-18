@@ -28,7 +28,7 @@ namespace WordDictionaryProtoType.Controllers
         [HttpPost(Name = "WriteDefinitions")]
         public async Task<IActionResult> WriteDefinitions()
         {
-            int numberOfWords = 2000000;
+            int numberOfWords = 170000;
             string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
 
             if (!System.IO.File.Exists(filePath))
@@ -37,8 +37,7 @@ namespace WordDictionaryProtoType.Controllers
             }
 
             StringBuilder csvContent = new StringBuilder();
-            csvContent.AppendLine("Word,Meaning");
-
+            
             string[] meaningWords = {
         "apple", "book", "cat", "dog", "elephant", "flower", "guitar", "house", "ice cream", "jungle",
         "kite", "lemon", "mountain", "notebook", "ocean", "pencil", "quilt", "river", "sun", "tree",
@@ -67,7 +66,7 @@ namespace WordDictionaryProtoType.Controllers
                 string word = "Word" + i;
 
                 List<string> meaningParts = new List<string>();
-                int meaningLength = random.Next(3, 50);
+                int meaningLength = random.Next(3,5);
 
                 for (int j = 0; j < meaningLength; j++)
                 {

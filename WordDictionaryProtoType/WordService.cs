@@ -21,41 +21,41 @@ namespace WordDictionaryProtoType
                 StringBuilder lineBuilder = new StringBuilder();
                 long currentOffset = 0;
                 bool inQuotes = false;
-                char currentChar;
 
                 while (reader.Peek() >= 0)
                 {
-                    currentChar = (char)reader.Read();
+                    char currentChar = (char)reader.Read();
                     lineBuilder.Append(currentChar);
+                    currentOffset += Encoding.UTF8.GetByteCount(new[] { currentChar });
 
-                    // Toggle inQuotes status when encountering a double quote
                     if (currentChar == '"')
                     {
                         inQuotes = !inQuotes;
                     }
 
-                    // Check for end of line
-                    if (currentChar == '\n' && !inQuotes)
+                    if ((currentChar == '\n' || (currentChar == '\r' && reader.Peek() != '\n')) && !inQuotes)
                     {
                         string line = lineBuilder.ToString();
-                        lineBuilder.Clear(); // Clear the builder for the next line
+                        lineBuilder.Clear();
 
-                        // Process the line to extract the word and meaning
                         int commaIndex = line.IndexOf(',');
                         if (commaIndex > 0)
                         {
                             string word = line.Substring(0, commaIndex).Trim().ToLower();
                             string meaning = line.Substring(commaIndex + 1).Trim();
 
-                            // Store the offset if we have a valid word and meaning
                             if (!string.IsNullOrEmpty(word) && !string.IsNullOrEmpty(meaning))
                             {
-                                WordOffsets[word] = currentOffset; // Store the current offset
+                                WordOffsets[word] = currentOffset - Encoding.UTF8.GetByteCount(new[] { currentChar }); // Adjust for newline
                             }
                         }
 
-                        // Update the current offset to the next line's starting index
-                        currentOffset += line.Length + 1; // +1 for the newline character
+                        // Adjust for CRLF
+                        if (currentChar == '\r' && reader.Peek() == '\n')
+                        {
+                            reader.Read(); // Consume LF
+                            currentOffset += Encoding.UTF8.GetByteCount(new[] { '\n' });
+                        }
                     }
                 }
             }
@@ -64,42 +64,36 @@ namespace WordDictionaryProtoType
         {
             string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
 
-            // Check if the word exists in the dictionary
             if (WordOffsets.TryGetValue(word.ToLower(), out var desiredOffset))
             {
-                using (var reader = new StreamReader(filePath))
+                using (var reader = new StreamReader(filePath, Encoding.UTF8))
                 {
-                    // Seek to the desired offset
                     reader.BaseStream.Seek(desiredOffset, SeekOrigin.Begin);
                     reader.DiscardBufferedData();
 
-                    // Read the line from the current position
-                    StringBuilder lineBuilder = new StringBuilder();
+                    var csvLine = new StringBuilder();
                     bool inQuotes = false;
-                    char currentChar;
 
-                    // Read characters until we find the end of the line
                     while (reader.Peek() >= 0)
                     {
-                        currentChar = (char)reader.Read();
+                        char currentChar = (char)reader.Read();
+                        csvLine.Append(currentChar);
 
                         if (currentChar == '"')
                         {
-                            inQuotes = !inQuotes; // Toggle inQuotes status
-                        }
-                        else if (currentChar == '\n' && !inQuotes)
-                        {
-                            break; // End of line
+                            inQuotes = !inQuotes;
                         }
 
-                        lineBuilder.Append(currentChar);
+                        if (currentChar == '\n' && !inQuotes)
+                        {
+                            break; // End of line reached
+                        }
                     }
 
-                    string line = lineBuilder.ToString();
+                    string line = csvLine.ToString();
                     if (!string.IsNullOrEmpty(line))
                     {
-                        // Use a more robust CSV parsing approach
-                        var csvLine = new List<string>();
+                        var fields = new List<string>();
                         var currentField = new StringBuilder();
                         inQuotes = false;
 
@@ -111,7 +105,7 @@ namespace WordDictionaryProtoType
                             }
                             else if (c == ',' && !inQuotes)
                             {
-                                csvLine.Add(currentField.ToString());
+                                fields.Add(currentField.ToString());
                                 currentField.Clear();
                             }
                             else
@@ -120,24 +114,16 @@ namespace WordDictionaryProtoType
                             }
                         }
 
-                        // Add the last field
-                        csvLine.Add(currentField.ToString());
+                        fields.Add(currentField.ToString());
 
-                        // Ensure we have at least two fields (word and meaning)
-                        if (csvLine.Count >= 2)
+                        if (fields.Count >= 2)
                         {
-                            // The meaning is the second field, with outer quotes removed
-                            string meaning = csvLine[1].Trim('"');
-
-                            // Unescape any double quotes within the meaning
-                            meaning = meaning.Replace("\"\"", "\"");
-
+                            string meaning = fields[1].Trim('"').Replace("\"\"", "\"");
                             return meaning;
                         }
                     }
                 }
             }
-
             return "Word not found";
         }
     }
