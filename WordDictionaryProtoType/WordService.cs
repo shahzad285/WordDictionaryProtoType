@@ -16,6 +16,7 @@ namespace WordDictionaryProtoType
 
         public async Task PopulateWordOffsets()
         {
+            WordOffsets = new Dictionary<string, long>();
             string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
             using (StreamReader reader = new StreamReader(filePath))
             {
@@ -201,6 +202,7 @@ namespace WordDictionaryProtoType
 
             await System.IO.File.WriteAllTextAsync(filePath, csvContent.ToString());
             Console.WriteLine($"CSV file '{filePath}' created with {numberOfWords} words and meanings.");
+            await PopulateWordOffsets();
 
             return "Dictionary populated";
         }
@@ -208,7 +210,6 @@ namespace WordDictionaryProtoType
         public async Task<string> UpdateDefinition(UpdateDefinitionDTO updateDefinitionDTO)
         {
             string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
-
             if (!WordOffsets.TryGetValue(updateDefinitionDTO.Word.ToLower(), out var desiredOffset))
             {
                 return "Word not found";
@@ -218,72 +219,114 @@ namespace WordDictionaryProtoType
             using (var reader = new StreamReader(stream, Encoding.UTF8, true, -1, true))
             using (var writer = new StreamWriter(stream, Encoding.UTF8, -1, true))
             {
-                stream.Seek(desiredOffset, SeekOrigin.Begin);
-                string currentLine = await reader.ReadLineAsync();
+                reader.BaseStream.Seek(desiredOffset, SeekOrigin.Begin);
+                reader.DiscardBufferedData();
 
-                if (string.IsNullOrEmpty(currentLine))
+                var csvLine = new StringBuilder();
+                bool inQuotes = false;
+
+                while (reader.Peek() >= 0)
                 {
-                    return "Error reading the line";
-                }
+                    char currentChar = (char)reader.Read();
+                    csvLine.Append(currentChar);
 
-                int commaIndex = currentLine.IndexOf(',');
-                if (commaIndex <= 0)
-                {
-                    return "Invalid line format";
-                }
-
-                string word = currentLine.Substring(0, commaIndex);
-                string newDefinition = updateDefinitionDTO.Meaning.Replace("\"", "\"\"");
-                string newLine = $"{word},\"{newDefinition}\"";
-
-                long remainingFileLength = stream.Length - (desiredOffset + currentLine.Length);
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                long readPosition = desiredOffset + currentLine.Length;
-                long writePosition = desiredOffset + newLine.Length;
-
-                if (writePosition > readPosition)
-                {
-                    // New line is longer, shift the rest of the file to the right
-                    stream.Seek(0, SeekOrigin.End);
-                    stream.SetLength(stream.Length + (writePosition - readPosition));
-
-                    while (remainingFileLength > 0)
+                    if (currentChar == '"')
                     {
-                        stream.Seek(-Math.Min(buffer.Length, remainingFileLength), SeekOrigin.Current);
-                        bytesRead = await stream.ReadAsync(buffer, 0, (int)Math.Min(buffer.Length, remainingFileLength));
-                        stream.Seek(writePosition - readPosition, SeekOrigin.Current);
-                        await stream.WriteAsync(buffer, 0, bytesRead);
-                        stream.Seek(-2 * bytesRead - (writePosition - readPosition), SeekOrigin.Current);
-                        remainingFileLength -= bytesRead;
-                        writePosition -= bytesRead;
-                        readPosition -= bytesRead;
+                        inQuotes = !inQuotes;
+                    }
+
+                    if (currentChar == '\n' && !inQuotes)
+                    {
+                        break; // End of line reached
                     }
                 }
-                else if (writePosition < readPosition)
+
+                string line = csvLine.ToString();
+                if (!string.IsNullOrEmpty(line))
                 {
-                    // New line is shorter, shift the rest of the file to the left
-                    while (readPosition < stream.Length)
+                    var fields = new List<string>();
+                    var currentField = new StringBuilder();
+                    inQuotes = false;
+
+                    foreach (char c in line)
                     {
-                        stream.Seek(readPosition, SeekOrigin.Begin);
-                        bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                        stream.Seek(writePosition, SeekOrigin.Begin);
-                        await stream.WriteAsync(buffer, 0, bytesRead);
-                        readPosition += bytesRead;
-                        writePosition += bytesRead;
+                        if (c == '"')
+                        {
+                            inQuotes = !inQuotes;
+                        }
+                        else if (c == ',' && !inQuotes)
+                        {
+                            fields.Add(currentField.ToString());
+                            currentField.Clear();
+                        }
+                        else
+                        {
+                            currentField.Append(c);
+                        }
                     }
-                    stream.SetLength(stream.Length - (readPosition - writePosition));
+
+                    fields.Add(currentField.ToString());
+
+                    if (fields.Count < 2)
+                    {
+                        return "Error reading the line";
+                    }
+
+                    string word = fields[0];
+                    string oldDefinition = fields[1].Trim('"').Replace("\"\"", "\"");
+
+                    // Prepare the new line
+                    string newDefinition = updateDefinitionDTO.Meaning.Replace("\"", "\"\"");
+                    string newLine = $"{word},\"{newDefinition}\"\n";
+
+                    // Calculate the difference in length
+                    long lengthDifference = newLine.Length - line.Length;
+
+                    if (lengthDifference != 0)
+                    {
+                        long currentPosition = stream.Position;
+                        long fileLength = stream.Length;
+
+                        if (lengthDifference > 0)
+                        {
+                            // New line is longer, shift right
+                            stream.SetLength(fileLength + lengthDifference);
+                            for (long pos = fileLength - 1; pos >= currentPosition; pos--)
+                            {
+                                stream.Seek(pos, SeekOrigin.Begin);
+                                int byteValue = stream.ReadByte();
+                                stream.Seek(pos + lengthDifference, SeekOrigin.Begin);
+                                stream.WriteByte((byte)byteValue);
+                            }
+                        }
+                        else
+                        {
+                            // New line is shorter, shift left
+                            for (long pos = currentPosition; pos < fileLength; pos++)
+                            {
+                                stream.Seek(pos, SeekOrigin.Begin);
+                                int byteValue = stream.ReadByte();
+                                stream.Seek(pos + lengthDifference, SeekOrigin.Begin);
+                                stream.WriteByte((byte)byteValue);
+                            }
+                            stream.SetLength(fileLength + lengthDifference);
+                        }
+                    }
+
+                    // Write the new line
+                    stream.Seek(desiredOffset, SeekOrigin.Begin);
+                    byte[] newLineBytes = Encoding.UTF8.GetBytes(newLine);
+                    await stream.WriteAsync(newLineBytes, 0, newLineBytes.Length);
+
+                    // Write the new line
+                    stream.Seek(desiredOffset, SeekOrigin.Begin);
+                    await writer.WriteAsync(newLine);
                 }
 
-                // Write the new line
-                stream.Seek(desiredOffset, SeekOrigin.Begin);
-                writer.WriteLine(newLine);
+                // Update the WordOffsets dictionary
+                await PopulateWordOffsets();
+                return "Definition updated successfully";
             }
-
-            // Update the WordOffsets dictionary
-            await PopulateWordOffsets();
-
-            return "Definition updated successfully";
         }
     }
 }
