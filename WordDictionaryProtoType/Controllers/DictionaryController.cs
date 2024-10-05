@@ -33,9 +33,15 @@ namespace WordDictionaryProtoType.Controllers
         }
 
         [HttpPost("UpdateDefinition")]
-        public async Task<IActionResult> UpdateDefinition(UpdateDefinitionDTO updateDefinitionDTO)
+        public async Task<IActionResult> UpdateDefinition(DefinitionDTO updateDefinitionDTO)
         {
             return Ok(await _wordService.UpdateDefinition(updateDefinitionDTO));
+        }
+
+        [HttpPost("InsertDefinition")]
+        public async Task<IActionResult> InsertDefinition(DefinitionDTO insertDefinitionDTO)
+        {
+            return Ok(await _wordService.InsertWord(insertDefinitionDTO));
         }
     }
 }

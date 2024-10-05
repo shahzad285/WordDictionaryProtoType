@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System;
+using System.Text;
 using WordDictionaryProtoType.DTOs;
 
 namespace WordDictionaryProtoType
@@ -207,126 +208,227 @@ namespace WordDictionaryProtoType
             return "Dictionary populated";
         }
 
-        public async Task<string> UpdateDefinition(UpdateDefinitionDTO updateDefinitionDTO)
+        public async Task<string> UpdateDefinition(DefinitionDTO updateDefinitionDTO)
         {
             string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
-            if (!WordOffsets.TryGetValue(updateDefinitionDTO.Word.ToLower(), out var desiredOffset))
+
+            if (!WordOffsets.TryGetValue(updateDefinitionDTO.Word.ToLower(), out var targetOffset))
             {
                 return "Word not found";
             }
 
-            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-            using (var reader = new StreamReader(stream, Encoding.UTF8, true, -1, true))
-            using (var writer = new StreamWriter(stream, Encoding.UTF8, -1, true))
+            string tempFilePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary_temp.csv");
+            try
             {
-                reader.BaseStream.Seek(desiredOffset, SeekOrigin.Begin);
-                reader.DiscardBufferedData();
-
-                var csvLine = new StringBuilder();
-                bool inQuotes = false;
-
-                while (reader.Peek() >= 0)
+                using (var reader = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var writer = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    char currentChar = (char)reader.Read();
-                    csvLine.Append(currentChar);
+                    var sortedOffsets = WordOffsets.OrderBy(kv => kv.Value).ToList();
 
-                    if (currentChar == '"')
+                    long currentPosition = 0;
+                    long newWordOffset = -1;
+                    for (int i = 0; i < sortedOffsets.Count; i++)
                     {
-                        inQuotes = !inQuotes;
-                    }
+                        var currentWord = sortedOffsets[i].Key;
+                        var currentOffset = sortedOffsets[i].Value;
+                        var nextOffset = (i < sortedOffsets.Count - 1) ? sortedOffsets[i + 1].Value : reader.Length;
 
-                    if (currentChar == '\n' && !inQuotes)
-                    {
-                        break; // End of line reached
-                    }
-                }
-
-                string line = csvLine.ToString();
-                if (!string.IsNullOrEmpty(line))
-                {
-                    var fields = new List<string>();
-                    var currentField = new StringBuilder();
-                    inQuotes = false;
-
-                    foreach (char c in line)
-                    {
-                        if (c == '"')
+                        // Copy content from current position to the start of the current word
+                        if (currentOffset > currentPosition)
                         {
-                            inQuotes = !inQuotes;
+                            await CopyFileContentAsync(reader, writer, currentPosition, currentOffset);
                         }
-                        else if (c == ',' && !inQuotes)
+
+
+                        if (currentOffset == targetOffset)
                         {
-                            fields.Add(currentField.ToString());
-                            currentField.Clear();
+                            // This is the word we want to update
+                            string newDefinition = updateDefinitionDTO.Meaning.Replace("\"", "\"\"");
+                            string updatedLine = $"{updateDefinitionDTO.Word},\"{newDefinition}\"\n";
+                            await writer.WriteAsync(Encoding.UTF8.GetBytes(updatedLine));
                         }
                         else
                         {
-                            currentField.Append(c);
+                            // Copy the original word and its definition
+                            await CopyFileContentAsync(reader, writer, currentOffset, nextOffset);
                         }
+
+                        currentPosition = nextOffset;
                     }
 
-                    fields.Add(currentField.ToString());
-
-                    if (fields.Count < 2)
+                    // Copy any remaining content
+                    if (currentPosition < reader.Length)
                     {
-                        return "Error reading the line";
+                        await CopyFileContentAsync(reader, writer, currentPosition, reader.Length);
                     }
-
-                    string word = fields[0];
-                    string oldDefinition = fields[1].Trim('"').Replace("\"\"", "\"");
-
-                    // Prepare the new line
-                    string newDefinition = updateDefinitionDTO.Meaning.Replace("\"", "\"\"");
-                    string newLine = $"{word},\"{newDefinition}\"\n";
-
-                    // Calculate the difference in length
-                    long lengthDifference = newLine.Length - line.Length;
-
-                    if (lengthDifference != 0)
-                    {
-                        long currentPosition = stream.Position;
-                        long fileLength = stream.Length;
-
-                        if (lengthDifference > 0)
-                        {
-                            // New line is longer, shift right
-                            stream.SetLength(fileLength + lengthDifference);
-                            for (long pos = fileLength - 1; pos >= currentPosition; pos--)
-                            {
-                                stream.Seek(pos, SeekOrigin.Begin);
-                                int byteValue = stream.ReadByte();
-                                stream.Seek(pos + lengthDifference, SeekOrigin.Begin);
-                                stream.WriteByte((byte)byteValue);
-                            }
-                        }
-                        else
-                        {
-                            // New line is shorter, shift left
-                            for (long pos = currentPosition; pos < fileLength; pos++)
-                            {
-                                stream.Seek(pos, SeekOrigin.Begin);
-                                int byteValue = stream.ReadByte();
-                                stream.Seek(pos + lengthDifference, SeekOrigin.Begin);
-                                stream.WriteByte((byte)byteValue);
-                            }
-                            stream.SetLength(fileLength + lengthDifference);
-                        }
-                    }
-
-                    // Write the new line
-                    stream.Seek(desiredOffset, SeekOrigin.Begin);
-                    byte[] newLineBytes = Encoding.UTF8.GetBytes(newLine);
-                    await stream.WriteAsync(newLineBytes, 0, newLineBytes.Length);
-
-                    // Write the new line
-                    stream.Seek(desiredOffset, SeekOrigin.Begin);
-                    await writer.WriteAsync(newLine);
                 }
 
-                // Update the WordOffsets dictionary
+                // Replace the original file with the temporary file
+                File.Delete(filePath);
+                File.Move(tempFilePath, filePath);
+
                 await PopulateWordOffsets();
                 return "Definition updated successfully";
             }
+            catch (IOException ex)
+            {
+                return $"Error updating file: {ex.Message}";
+            }
         }
+
+        public async Task<string> InsertWord(DefinitionDTO definitionDTO)
+        {
+            string filePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary.csv");
+            string tempFilePath = Path.Combine(_webHostEnvironment.WebRootPath, "Dictionary_temp.csv");
+
+            // Check if the word already exists
+            if (WordOffsets.ContainsKey(definitionDTO.Word.ToLower()))
+            {
+                return "Word already exists";
+            }
+
+            try
+            {
+                using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                using (var writer = new StreamWriter(tempFilePath, false, Encoding.UTF8))
+                {
+                    bool wordInserted = false;
+                    var csvLine = new StringBuilder();
+                    bool inQuotes = false;
+
+                    // Read the file character by character
+                    while (reader.Peek() >= 0)
+                    {
+                        char currentChar = (char)reader.Read();
+                        if (!(currentChar == '\n' && !inQuotes))
+                        {
+                            csvLine.Append(currentChar);
+                        }
+
+                        if (currentChar == '"')
+                        {
+                            inQuotes = !inQuotes;
+
+                        }
+
+                        // Handle line endings
+                        if (currentChar == '\n' && !inQuotes)
+                        {
+                            string currentLine = csvLine.ToString().TrimEnd('\r'); // Trim carriage returns
+                            csvLine.Clear(); // Clear csvLine for the next line
+
+                            if (!string.IsNullOrWhiteSpace(currentLine)) // Ensure we're not writing blank lines
+                            {
+                                var fields = SplitCsvLine(currentLine);
+
+                                if (fields.Count >= 2)
+                                {
+                                    string currentWord = fields[0].ToLower();
+
+                                    // Insert the new word in the correct place
+                                    if (!wordInserted && string.Compare(definitionDTO.Word.ToLower(), currentWord) < 0)
+                                    {
+                                        await writer.WriteLineAsync($"{definitionDTO.Word.ToLower()},\"{definitionDTO.Meaning.Replace("\"", "\"\"")}\"");
+                                        wordInserted = true;
+                                    }
+
+                                    // Write the current line from the original file to the temporary file
+                                    await writer.WriteLineAsync(currentLine);
+                                }
+                            }
+                        }
+
+                    }
+
+                    // If the word wasn't inserted yet, append it to the end
+                    if (!wordInserted)
+                    {
+                        await writer.WriteLineAsync($"{definitionDTO.Word.ToLower()},\"{definitionDTO.Meaning.Replace("\"", "\"\"")}\"");
+                    }
+                }
+
+                // Replace the original file with the updated one
+                File.Delete(filePath);
+                File.Move(tempFilePath, filePath);
+
+                // Recalculate word offsets after the word is inserted
+                await PopulateWordOffsets();
+
+                return "Word inserted successfully";
+            }
+            catch (IOException ex)
+            {
+                return $"Error updating file: {ex.Message}";
+            }
+        }
+
+        private List<string> SplitCsvLine(string line)
+        {
+            var fields = new List<string>();
+            var currentField = new StringBuilder();
+            bool inQuotes = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (c == '"')
+                {
+                    if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                    {
+                        // Handle escaped double quote
+                        currentField.Append('"');
+                        i++; // Skip the next quote
+                    }
+                    else
+                    {
+                        inQuotes = !inQuotes;
+                    }
+                }
+                else if (c == ',' && !inQuotes)
+                {
+                    fields.Add(currentField.ToString());
+                    currentField.Clear();
+                }
+                else
+                {
+                    currentField.Append(c);
+                }
+            }
+
+            fields.Add(currentField.ToString());
+            return fields;
+        }
+
+        private async Task CopyFileContentAsync(FileStream source, FileStream destination, long startOffset, long endOffset)
+        {
+            // Ensure startOffset and endOffset are non-negative
+            if (startOffset < 0 || endOffset < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(startOffset), "Offsets must be non-negative.");
+            }
+
+            // Ensure startOffset is not greater than endOffset
+            if (startOffset > endOffset)
+            {
+                throw new ArgumentException("Start offset must be less than or equal to end offset.");
+            }
+
+            byte[] buffer = new byte[8192];
+            long bytesToRead = endOffset - startOffset;
+
+            source.Position = startOffset;
+
+            while (bytesToRead > 0)
+            {
+                int bytesRead = await source.ReadAsync(buffer, 0, (int)Math.Min(buffer.Length, bytesToRead));
+                if (bytesRead == 0) break;
+
+                await destination.WriteAsync(buffer, 0, bytesRead);
+                bytesToRead -= bytesRead;
+            }
+        }
+
+
     }
 }
